@@ -1,0 +1,60 @@
+# Local stack: the API plus a containerised Ollama.
+#
+# Ollama is a separate service rather than baked into the app image because the
+# models are gigabytes and their lifecycle is different from the application's —
+# you want to redeploy the API without re-pulling llama3.1.
+#
+# If you already run Ollama on the host, skip this file and set
+# SF_OLLAMA_HOST=http://host.docker.internal:11434 against the app image directly.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # One-shot: pull the models the default chains reference, then exit. Without
+  # this the API starts and every extraction fails with "model not found".
+  model-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "ollama pull llama3.1 && ollama pull llama3.2 && ollama pull nomic-embed-text"
+    restart: "no"
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      ollama:
+        condition: service_healthy
+      model-pull:
+        condition: service_completed_successfully
+    environment:
+      SF_OLLAMA_HOST: http://ollama:11434
+      SF_DATA_DIR: /data
+      SF_DB_PATH: /data/signalforge.duckdb
+      SF_SEC_USER_AGENT: ${SF_SEC_USER_AGENT:-SignalForge/0.1 (set-your-email@example.com)}
+      # Optional: set to route hard tasks to Claude.
+      SF_ANTHROPIC_API_KEY: ${SF_ANTHROPIC_API_KEY:-}
+      SF_RUN_COST_CAP_USD: ${SF_RUN_COST_CAP_USD:-5.0}
+    volumes:
+      - warehouse:/data
+
+volumes:
+  ollama-models:
+  warehouse:

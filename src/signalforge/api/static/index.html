@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SignalForge</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --text: #e6e9ef;
+    --dim: #8b93a7; --pos: #3fb950; --neg: #f85149; --warn: #d29922;
+    --accent: #58a6ff; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f7f9; --panel: #fff; --line: #e2e5ea; --text: #1c2027;
+      --dim: #5f6673; --pos: #1a7f37; --neg: #cf222e; --warn: #9a6700;
+      --accent: #0969da;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 18px 24px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  h1 { font-size: 17px; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--dim); font-size: 12.5px; }
+  main { padding: 20px 24px 60px; max-width: 1180px; }
+  section { margin-bottom: 30px; }
+  h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--dim); margin: 0 0 10px; font-weight: 600;
+  }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px 14px;
+  }
+  .card .n { font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .card .k { color: var(--dim); font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; }
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; }
+  tr:last-child td { border-bottom: none; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+  .pos { color: var(--pos); } .neg { color: var(--neg); } .dim { color: var(--dim); }
+  .pill {
+    display: inline-block; padding: 1px 7px; border-radius: 20px;
+    font-size: 11px; font-weight: 600; border: 1px solid currentColor;
+  }
+  .critical { color: var(--neg); } .warn { color: var(--warn); } .info { color: var(--dim); }
+  form { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  input[type=text] {
+    flex: 1; min-width: 240px; padding: 8px 11px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    font-size: 13px;
+  }
+  button {
+    padding: 8px 15px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; font-size: 13px;
+  }
+  button:disabled { opacity: .55; cursor: progress; }
+  pre {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 14px; overflow-x: auto; font-family: var(--mono);
+    font-size: 12.5px; white-space: pre-wrap; margin: 0;
+  }
+  .muted { color: var(--dim); font-size: 12.5px; }
+  .ev { color: var(--dim); font-size: 12px; font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SignalForge</h1>
+  <span class="sub" id="hdr">loading…</span>
+</header>
+
+<main>
+  <section>
+    <h2>Corpus &amp; cost</h2>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <section>
+    <h2>Alerts</h2>
+    <div class="scroll"><table id="alerts"><tbody><tr><td class="dim">loading…</td></tr></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>Signals</h2>
+    <div class="scroll"><table id="signals"><tbody><tr><td class="dim">loading…</td></tr></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>Ask Aion</h2>
+    <form id="agentForm">
+      <input type="text" id="q" placeholder="e.g. Which companies show deteriorating guidance, and what did they say?" />
+      <button type="submit" id="askBtn">Ask</button>
+    </form>
+    <pre id="answer" class="muted">The agent runs against the local corpus only, and cites accession numbers.</pre>
+  </section>
+
+  <section>
+    <h2>Model cost &amp; latency</h2>
+    <div class="scroll"><table id="cost"><tbody><tr><td class="dim">loading…</td></tr></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>Recent eval runs</h2>
+    <div class="scroll"><table id="runs"><tbody><tr><td class="dim">loading…</td></tr></tbody></table></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const get = (u) => fetch(u).then(r => r.ok ? r.json() : Promise.reject(new Error(r.status)));
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => (
+  {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const sign = (n) => (n > 0 ? "pos" : n < 0 ? "neg" : "dim");
+const fmt = (n, d = 3) => (n === null || n === undefined ? "–" : Number(n).toFixed(d));
+
+function table(el, cols, rows, render) {
+  if (!rows.length) { el.innerHTML = `<tbody><tr><td class="dim">no data yet</td></tr></tbody>`; return; }
+  el.innerHTML =
+    `<thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead>` +
+    `<tbody>${rows.map(render).join("")}</tbody>`;
+}
+
+async function load() {
+  const [health, cost, alerts, signals, runs] = await Promise.all([
+    get("/health"), get("/metrics/cost?days=30"), get("/alerts?limit=15"),
+    get("/signals?limit=25"), get("/metrics/runs?limit=10"),
+  ].map(p => p.catch(() => null)));
+
+  if (health) {
+    const w = health.warehouse || {};
+    $("hdr").textContent =
+      `${health.status} · ${w.filings ?? 0} filings · ${w.extractions ?? 0} extractions · ${w.signals ?? 0} signals`;
+  }
+
+  const w = (health && health.warehouse) || {};
+  const cards = [
+    ["filings", w.filings ?? 0], ["extractions", w.extractions ?? 0],
+    ["signals", w.signals ?? 0],
+    ["llm calls (30d)", cost ? cost.total_calls : 0],
+    ["cache hit rate", cost ? fmt(cost.cache_hit_rate, 2) : "–"],
+    ["spend (30d)", cost ? "$" + fmt(cost.total_cost_usd, 4) : "–"],
+  ];
+  $("cards").innerHTML = cards.map(([k, v]) =>
+    `<div class="card"><div class="n">${esc(v)}</div><div class="k">${esc(k)}</div></div>`).join("");
+
+  table($("alerts"), ["severity", "ticker", "headline", "signal", "score"], alerts || [], a =>
+    `<tr><td><span class="pill ${esc(a.severity)}">${esc(a.severity)}</span></td>
+     <td>${esc(a.ticker || "–")}</td><td>${esc(a.headline)}</td>
+     <td class="dim">${esc(a.signal_name)}</td>
+     <td class="num ${sign(a.score)}">${fmt(a.score)}</td></tr>`);
+
+  table($("signals"), ["ticker", "signal", "score", "conf", "as of", "rationale"], signals || [], s =>
+    `<tr><td>${esc(s.ticker || s.cik)}</td><td class="dim">${esc(s.name)}</td>
+     <td class="num ${sign(s.score)}">${fmt(s.score)}</td>
+     <td class="num">${fmt(s.confidence, 2)}</td><td class="dim">${esc(s.as_of)}</td>
+     <td>${esc((s.rationale || "").slice(0, 110))}
+     ${s.evidence && s.evidence.length ? `<div class="ev">“${esc(s.evidence[0].slice(0, 130))}”</div>` : ""}</td></tr>`);
+
+  table($("cost"), ["model", "calls", "cache hits", "tokens in", "tokens out", "p95 ms", "$"],
+    (cost && cost.by_model) || [], m =>
+    `<tr><td>${esc(m.model)}<span class="dim"> ${esc(m.provider)}</span></td>
+     <td class="num">${esc(m.calls)}</td><td class="num">${esc(m.cache_hits ?? 0)}</td>
+     <td class="num">${esc(m.tokens_in ?? 0)}</td><td class="num">${esc(m.tokens_out ?? 0)}</td>
+     <td class="num">${fmt(m.p95_ms, 0)}</td><td class="num">${fmt(m.cost_usd, 5)}</td></tr>`);
+
+  table($("runs"), ["task", "model", "prompt", "acc", "dir acc", "halluc", "ECE", "n"],
+    (runs || []), r => {
+      const m = typeof r.metrics === "string" ? JSON.parse(r.metrics) : (r.metrics || {});
+      const h = m.hallucination_rate;
+      return `<tr><td>${esc(r.task)}</td><td>${esc(r.model)}</td>
+        <td class="dim">${esc(r.prompt_version)} <span class="dim">${esc((r.prompt_hash||"").slice(0,8))}</span></td>
+        <td class="num">${fmt(m.accuracy)}</td><td class="num">${fmt(m.direction_accuracy)}</td>
+        <td class="num ${h ? "neg" : "pos"}">${fmt(h)}</td>
+        <td class="num">${fmt(m.ece)}</td><td class="num">${esc(r.n_cases)}</td></tr>`;
+    });
+}
+
+$("agentForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const question = $("q").value.trim();
+  if (!question) return;
+  const btn = $("askBtn"), out = $("answer");
+  btn.disabled = true;
+  out.classList.remove("muted");
+  out.textContent = "thinking…";
+  try {
+    const r = await fetch("/agent", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, max_steps: 6 }),
+    });
+    const d = await r.json();
+    const trace = (d.steps || []).map(s => `  ${s.n}. ${s.tool}(${JSON.stringify(s.args)})`).join("\n");
+    out.textContent =
+      `${d.answer}\n\n--- trace (${d.stop_reason}) ---\n${trace || "  (no tool calls)"}\n\n${JSON.stringify(d.stats)}`;
+  } catch (err) {
+    out.textContent = "Request failed: " + err;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

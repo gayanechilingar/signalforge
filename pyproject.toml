@@ -1,0 +1,66 @@
+[project]
+name = "signalforge"
+version = "0.1.0"
+description = "LLM extraction pipelines that turn SEC filings into investment signals, with evals, model selection, and an agentic research layer."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "duckdb>=1.0",
+    "numpy>=1.26",
+    "typer>=0.12",
+    "rich>=13.7",
+    "selectolax>=0.3.21",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "tenacity>=8.4",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Only needed to route tasks to Claude; the local Ollama path needs nothing here.
+hosted = [
+    "anthropic>=0.40",
+]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+sf = "signalforge.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/signalforge"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+# E501: line length is enforced by the formatter, not the linter.
+# B008: `typer.Argument(...)`/`Option(...)` in a default is how Typer declares a
+#       CLI parameter — the rule is correct in general and wrong for this framework.
+ignore = ["E501", "B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "live: hits a real external service (EDGAR or a running Ollama); deselected in CI",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true

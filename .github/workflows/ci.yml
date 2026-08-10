@@ -1,0 +1,117 @@
+name: ci
+
+# CI runs entirely on the deterministic stub provider: no GPU, no API key, no
+# network. That is a deliberate constraint — a regression gate that needs
+# inference is a gate that gets skipped, and a skipped gate protects nothing.
+#
+# What this pipeline gates is the *pipeline*: schema conformance, the repair loop,
+# citation grounding, scoring, alert rules, and the SQL/sandbox guards. Model
+# quality is measured separately by `sf eval bakeoff` against real models, which a
+# human reads — see docs/results/.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SF_DEFAULT_PROVIDER: stub
+  SF_DETERMINISTIC: "true"
+  # Any real spend in CI is a bug, so the cap is set to zero-ish rather than
+  # trusted to stay unused.
+  SF_RUN_COST_CAP_USD: "0.01"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install project
+        run: uv sync --all-extras --python ${{ matrix.python-version }}
+
+      - name: Lint
+        run: uv run ruff check src tests
+
+      - name: Format check
+        run: uv run ruff format --check src tests
+
+      - name: Type check
+        run: uv run mypy src/signalforge
+        continue-on-error: true  # advisory while annotations are still being added
+
+      - name: Unit and integration tests
+        # -m "not live" excludes the tests that need EDGAR or a running Ollama.
+        run: uv run pytest -q -m "not live" --durations=10
+
+  regression-gate:
+    # The gate that actually protects signal quality: ground-truth evaluation with
+    # declared thresholds on hallucination rate, schema conformance, and accuracy.
+    # A prompt change that raises the hallucination rate fails here.
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --all-extras
+
+      - name: Prompt registry integrity
+        # Catches an edited prompt whose declared variables no longer match its
+        # template, and any duplicate name@version.
+        run: uv run sf prompts
+
+      - name: Model registry integrity
+        run: uv run sf models
+
+      - name: Warehouse schema applies cleanly
+        run: uv run sf init-db
+
+      - name: Evaluation regression gate
+        run: uv run sf eval gate --chain ci
+
+      - name: Upload eval artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-warehouse
+          path: data/*.duckdb
+          retention-days: 14
+          if-no-files-found: ignore
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t signalforge:ci .
+
+      - name: Image smoke test
+        # The container must be able to run the gate too, or the image is not
+        # actually a deployable artefact.
+        run: |
+          docker run --rm \
+            -e SF_DEFAULT_PROVIDER=stub \
+            signalforge:ci sf eval gate --chain ci

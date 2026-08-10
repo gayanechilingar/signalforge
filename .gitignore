@@ -1,0 +1,22 @@
+# Warehouse, caches, and downloaded filings — all reproducible from `sf ingest`.
+data/
+*.duckdb
+*.duckdb.wal
+
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+.env
+.env.local
+
+.DS_Store
+.idea/
+.vscode/

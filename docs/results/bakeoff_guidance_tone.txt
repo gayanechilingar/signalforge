@@ -1,0 +1,78 @@
+=== BAKEOFF: guidance_tone ===
+                         guidance_tone: model bake-off                          
+┏━━━━━━┳━━━━━━┳━━━━━━┳━━━━━━┳━━━━━━┳━━━━━━┳━━━━━━┳━━━━━━━┳━━━━━━┳━━━━━━━┳━━━━━━┓
+┃      ┃      ┃      ┃  dir ┃      ┃      ┃ sch… ┃       ┃      ┃   p95 ┃      ┃
+┃ mod… ┃ pro… ┃  acc ┃  acc ┃   F1 ┃ hal… ┃  err ┃ repa… ┃  ECE ┃    ms ┃ $/1k ┃
+┡━━━━━━╇━━━━━━╇━━━━━━╇━━━━━━╇━━━━━━╇━━━━━━╇━━━━━━╇━━━━━━━╇━━━━━━╇━━━━━━━╇━━━━━━┩
+│ lla… │ v2   │ 0.5… │ 0.7… │ 0.7… │ 0.0… │ 0.0… │ 0.000 │ 0.2… │ 4385… │ 0.0… │
+│ lla… │ v2   │ 0.9… │ 1.0… │ 1.0… │ 0.0… │ 0.0… │ 0.000 │ 0.1… │ 9825… │ 0.0… │
+│ lla… │ v2   │ 0.8… │ 0.8… │ 0.8… │ 0.1… │ 0.0… │ 0.000 │ 0.0… │ 9152… │ 0.0… │
+└──────┴──────┴──────┴──────┴──────┴──────┴──────┴───────┴──────┴───────┴──────┘
+
+pick: llama31-8b  cheapest model clearing the bar: direction_accuracy=1.0, 
+hallucination_rate=0.0, ece=0.1833, $0.0/1k
+  rejected llama32-3b: hallucination_rate 0.0833 > 0.05; ece 0.25 > 0.2 
+(confidence not usable as a gate)
+  rejected llama3-8b: hallucination_rate 0.1667 > 0.05
+
+=== PROMPT A/B: guidance_tone v1 vs v2 on llama31-8b ===
+╭───────────────────── Traceback (most recent call last) ──────────────────────╮
+│ /Users/gchilingaryan/Desktop/Bit                                             │
+│ Capital/signalforge/src/signalforge/cli.py:317 in eval_ab                    │
+│                                                                              │
+│   314 │   from .evals.harness import prompt_ab                               │
+│   315 │   from .evals.report import render_comparison                        │
+│   316 │                                                                      │
+│ ❱ 317 │   prompts = get_prompts()                                            │
+│   318 │   vs = [v.strip() for v in versions.split(",")] if versions else     │
+│       prompts.versions(task)                                                 │
+│   319 │   if len(vs) < 2:                                                    │
+│   320 │   │   console.print(f"[yellow]only one version of {task} exists:     │
+│       {vs}[/yellow]")                                                        │
+│                                                                              │
+│ /Users/gchilingaryan/Desktop/Bit                                             │
+│ Capital/signalforge/src/signalforge/prompts/registry.py:194 in get_prompts   │
+│                                                                              │
+│   191                                                                        │
+│   192 @lru_cache                                                             │
+│   193 def get_prompts() -> PromptRegistry:                                   │
+│ ❱ 194 │   return PromptRegistry()                                            │
+│   195                                                                        │
+│                                                                              │
+│ /Users/gchilingaryan/Desktop/Bit                                             │
+│ Capital/signalforge/src/signalforge/prompts/registry.py:96 in __init__       │
+│                                                                              │
+│    93 │   │   self.root = root or get_settings().prompt_dir                  │
+│    94 │   │   self._by_key: dict[str, Prompt] = {}                           │
+│    95 │   │   self._by_name: dict[str, list[Prompt]] = {}                    │
+│ ❱  96 │   │   self._load()                                                   │
+│    97 │                                                                      │
+│    98 │   def _load(self) -> None:                                           │
+│    99 │   │   if not self.root.exists():                                     │
+│                                                                              │
+│ /Users/gchilingaryan/Desktop/Bit                                             │
+│ Capital/signalforge/src/signalforge/prompts/registry.py:102 in _load         │
+│                                                                              │
+│    99 │   │   if not self.root.exists():                                     │
+│   100 │   │   │   return                                                     │
+│   101 │   │   for path in sorted(self.root.rglob("*.md")):                   │
+│ ❱ 102 │   │   │   prompt = _parse(path)                                      │
+│   103 │   │   │   if prompt.key in self._by_key:                             │
+│   104 │   │   │   │   raise ValueError(                                      │
+│   105 │   │   │   │   │   f"duplicate prompt {prompt.key} at {path} and "    │
+│                                                                              │
+│ /Users/gchilingaryan/Desktop/Bit                                             │
+│ Capital/signalforge/src/signalforge/prompts/registry.py:162 in _parse        │
+│                                                                              │
+│   159 │                                                                      │
+│   160 │   for field in ("name", "version"):                                  │
+│   161 │   │   if field not in meta:                                          │
+│ ❱ 162 │   │   │   raise ValueError(f"prompt {path} frontmatter is missing    │
+│       required '{field}'")                                                   │
+│   163 │                                                                      │
+│   164 │   prompt = Prompt(                                                   │
+│   165 │   │   name=meta["name"],                                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ValueError: prompt /Users/gchilingaryan/Desktop/Bit 
+Capital/signalforge/prompts/skills/reading_filings.md frontmatter is missing 
+required 'version'

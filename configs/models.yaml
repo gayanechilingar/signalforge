@@ -1,0 +1,132 @@
+# Model registry — the single source of truth for what a model costs, how much
+# context it has, and what it can do.
+#
+# Pipelines reference models by the `name` key here, never by provider-side ID.
+# That indirection is what makes the model bake-off in `sf eval bakeoff` a config
+# change rather than a code change, and it means a price update is a one-line
+# diff rather than a grep for magic numbers.
+#
+# `tier` orders escalation for the router's fallback chain: a failure or a
+# low-confidence extraction can be retried one tier up.
+
+models:
+  # --- local, open-source (default: free, private, no key required) --------
+  - name: llama32-3b
+    provider: ollama
+    model_id: llama3.2:latest
+    context_tokens: 131072
+    usd_per_mtok_in: 0.0
+    usd_per_mtok_out: 0.0
+    tier: 1
+    supports_json: true
+    supports_tools: true
+    notes: >
+      3B params. The cheap tier — fast enough to run the whole corpus. Good at
+      classification with a tight schema, unreliable on multi-hop reasoning.
+
+  - name: llama31-8b
+    provider: ollama
+    model_id: llama3.1:latest
+    context_tokens: 131072
+    usd_per_mtok_in: 0.0
+    usd_per_mtok_out: 0.0
+    tier: 2
+    supports_json: true
+    supports_tools: true
+    notes: 8B params, 128k context. Default extraction model; handles tool calls.
+
+  - name: llama3-8b
+    provider: ollama
+    model_id: llama3:latest
+    context_tokens: 8192
+    usd_per_mtok_in: 0.0
+    usd_per_mtok_out: 0.0
+    tier: 2
+    supports_json: true
+    supports_tools: false
+    notes: >
+      8k context only — included specifically as a bake-off control, to show
+      what a context-starved model does to long-section extraction quality.
+
+  # --- hosted (env-gated: active the moment SF_ANTHROPIC_API_KEY is set) ---
+  # Prices are USD per million tokens, first-party Claude API, as of 2026-08.
+  - name: haiku-4.5
+    provider: anthropic
+    model_id: claude-haiku-4-5
+    context_tokens: 200000
+    usd_per_mtok_in: 1.0
+    usd_per_mtok_out: 5.0
+    tier: 3
+    supports_json: true
+    supports_tools: true
+    supports_sampling: true
+    notes: Cheapest hosted tier. Speed-critical classification.
+
+  - name: sonnet-5
+    provider: anthropic
+    model_id: claude-sonnet-5
+    context_tokens: 1000000
+    usd_per_mtok_in: 3.0
+    usd_per_mtok_out: 15.0
+    tier: 4
+    supports_json: true
+    supports_tools: true
+    supports_sampling: false
+    max_output_tokens: 128000
+    notes: >
+      Near-Opus quality on extraction at Sonnet cost. Sampling params removed —
+      the router must not send temperature/top_p/top_k.
+
+  - name: opus-5
+    provider: anthropic
+    model_id: claude-opus-5
+    context_tokens: 1000000
+    usd_per_mtok_in: 5.0
+    usd_per_mtok_out: 25.0
+    tier: 5
+    supports_json: true
+    supports_tools: true
+    supports_sampling: false
+    max_output_tokens: 128000
+    notes: >
+      Top escalation tier: whole-filing reasoning and the LLM-judge in the eval
+      harness, where being right matters more than the per-call cost. Sampling
+      params removed; thinking is on by default.
+
+  # --- deterministic stub (CI) --------------------------------------------
+  - name: stub
+    provider: stub
+    model_id: stub
+    context_tokens: 1000000
+    usd_per_mtok_in: 0.0
+    usd_per_mtok_out: 0.0
+    tier: 0
+    supports_json: true
+    supports_tools: true
+    notes: Hermetic CI provider. Never selected outside tests and CI.
+
+# Embeddings are a separate axis: changing this invalidates the vector index,
+# so it is versioned in the `embeddings` table rather than silently swapped.
+embeddings:
+  default: nomic-embed-text
+  models:
+    - name: nomic-embed-text
+      provider: ollama
+      model_id: nomic-embed-text
+      dim: 768
+      usd_per_mtok_in: 0.0
+    - name: stub-embed
+      provider: stub
+      model_id: stub-embed
+      dim: 64
+      usd_per_mtok_in: 0.0
+
+# Named fallback chains, referenced by pipeline configs. The router walks the
+# chain on retryable failure; a non-retryable error (bad schema, missing model)
+# stops immediately rather than burning the whole chain on a config bug.
+chains:
+  extract_default: [llama31-8b, llama32-3b]
+  extract_hosted: [sonnet-5, haiku-4.5]
+  judge: [opus-5, llama31-8b]
+  agent: [llama31-8b]
+  ci: [stub]
