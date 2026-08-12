@@ -227,6 +227,19 @@ class TestSidecar:
         assert r.ok is False
         assert "exceeded" in r.stderr
 
+    def test_a_killed_loop_always_explains_itself(self):
+        """A failure the agent cannot read is a failure it cannot recover from.
+
+        Regression: RLIMIT_CPU was set equal to the wall-clock timeout, so for a
+        CPU-bound loop the two deadlines raced. When the rlimit won, the child died
+        by signal with no traceback and `stderr` came back empty — the agent saw
+        `ok=False` and "(no output)". Whichever limit fires, there must be a reason.
+        """
+        r = run_python("while True: pass", timeout_s=2.0)
+        assert r.ok is False
+        assert r.stderr.strip(), "a killed process must still report why"
+        assert r.render() != "(no output)"
+
     def test_runtime_error_is_returned_not_raised(self):
         r = run_python("result = 1 / 0")
         assert r.ok is False and "ZeroDivisionError" in r.stderr
