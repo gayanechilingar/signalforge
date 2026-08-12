@@ -4,7 +4,13 @@ FROM python:3.12-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-WORKDIR /build
+# Must match the runtime WORKDIR. The install below is editable, so the path
+# recorded in the venv has to be one that still exists in the final image —
+# building in /build left the finder pointing at /build/src and every `sf` call
+# died with ModuleNotFoundError. The layout is load-bearing beyond imports too:
+# settings.py derives REPO_ROOT from the package location, and prompts/, configs/
+# and evals/ are resolved relative to it.
+WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 
 # Dependency metadata only, so the resolve layer caches independently of source.
