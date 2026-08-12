@@ -197,19 +197,29 @@ class Router:
         requests, and un-jittered backoff makes them retry in lockstep and
         re-overload whatever just failed.
         """
+        # At least one attempt, always. `max_retries` counts total attempts, so
+        # SF_MAX_RETRIES=0 — the natural way to ask for "no retrying" — used to
+        # give `range(0)`, skipping the call entirely and failing on a bare
+        # AssertionError without ever reaching the provider.
+        attempts = max(1, self.max_retries)
         last: LLMError | None = None
-        for attempt in range(self.max_retries):
+        for attempt in range(attempts):
             try:
                 return client.complete(req)
             except LLMError as exc:
                 if not exc.retryable:
                     raise
                 last = exc
-                if attempt == self.max_retries - 1:
+                if attempt == attempts - 1:
                     break
                 delay = min(2.0**attempt + random.uniform(0, 0.4), 20.0)
                 time.sleep(delay)
-        assert last is not None
+        if last is None:  # unreachable: attempts >= 1
+            raise LLMError(
+                f"no completion attempt was made for {spec.name}",
+                provider=spec.provider,
+                retryable=False,
+            )
         raise last
 
     def _check_cap(self, spec: ModelSpec, req: LLMRequest) -> None:

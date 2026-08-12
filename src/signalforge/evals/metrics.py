@@ -116,8 +116,14 @@ def summarise(outcomes: list[CaseOutcome], *, primary_field: str = "direction") 
         metrics["brier"] = round(brier_score(confs), 4)
         metrics["mean_confidence"] = round(sum(c for c, _ in confs) / len(confs), 4)
         # The gap between stated confidence and realised accuracy: positive means
-        # overconfident, which is the dangerous direction.
-        metrics["overconfidence"] = round(metrics["mean_confidence"] - (correct / n), 4)
+        # overconfident, which is the dangerous direction. Both terms must come
+        # from the same population — `confs` covers only valid cases that reported
+        # a confidence, whereas `accuracy` above is over all n. Comparing against
+        # the latter charged schema failures (never correct, and never carrying a
+        # confidence) against the confidence pool, overstating overconfidence by
+        # the schema violation rate. ECE and Brier already score `confs` alone.
+        conf_accuracy = sum(1 for _, ok in confs if ok) / len(confs)
+        metrics["overconfidence"] = round(metrics["mean_confidence"] - conf_accuracy, 4)
 
     metrics["confusion"] = confusion_matrix(outcomes, primary_field)
     return metrics

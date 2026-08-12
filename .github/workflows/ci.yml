@@ -21,6 +21,9 @@ concurrency:
 
 env:
   SF_DEFAULT_PROVIDER: stub
+  # Embeddings resolve through the registry, so this is what keeps retrieval
+  # from dialling a real Ollama that does not exist on the runner.
+  SF_EMBED_MODEL: stub-embed
   SF_DETERMINISTIC: "true"
   # Any real spend in CI is a bug, so the cap is set to zero-ish rather than
   # trusted to stay unused.

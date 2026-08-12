@@ -162,7 +162,13 @@ def _fuzzy_contains(
 
     span = len(quote_tokens)
     want = set(quote_tokens)
-    needed = threshold * span
+    # Threshold applies to *distinct* tokens, because the overlap below is a set
+    # intersection and so can never exceed len(want). Scaling it by the raw token
+    # count instead made the bar unreachable for any quote that repeats a word:
+    # a 36-token quote with 26 distinct tokens needed 30.6 of a possible 26, so
+    # stage 3 silently never fired and both cases in this module's docstring — an
+    # elided word, a spliced footnote marker — were reported as fabricated.
+    needed = threshold * len(want)
 
     for pos in token_index[anchor][:200]:  # cap work on pathological repetition
         start = max(0, pos - span)

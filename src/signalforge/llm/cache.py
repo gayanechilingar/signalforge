@@ -94,6 +94,8 @@ class ResponseCache:
             return {"entries": 0, "hits": 0}
         with self._con() as con:
             row = con.execute("SELECT count(*), coalesce(sum(hits), 0) FROM llm_cache").fetchone()
+        if row is None:
+            return {"entries": 0, "hits": 0}
         return {"entries": int(row[0]), "hits": int(row[1])}
 
     def clear(self) -> None:

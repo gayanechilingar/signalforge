@@ -100,7 +100,7 @@ class OllamaClient(LLMClient):
         )
 
     def embed(self, texts: list[str], *, model: str | None = None) -> list[list[float]]:
-        model = model or get_settings().embed_model
+        model = model or get_settings().embed_model or "nomic-embed-text"
         out: list[list[float]] = []
         # /api/embed handles batches on recent builds; /api/embeddings is the
         # single-input legacy route. Try batch first, degrade gracefully.

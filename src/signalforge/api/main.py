@@ -85,7 +85,8 @@ def list_signals(
     min_abs_score: float = Query(0.0, ge=0.0, le=1.0),
     limit: int = Query(50, le=500),
 ) -> list[dict[str, Any]]:
-    clauses, params = ["abs(s.score) >= ?"], [min_abs_score]
+    clauses: list[str] = ["abs(s.score) >= ?"]
+    params: list[Any] = [min_abs_score]
     if ticker:
         clauses.append("upper(coalesce(s.ticker, c.ticker)) = ?")
         params.append(ticker.upper())

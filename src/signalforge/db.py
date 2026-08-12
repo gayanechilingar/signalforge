@@ -66,6 +66,11 @@ def upsert(
 
     DuckDB supports ``INSERT OR REPLACE``; JSON-typed columns need dict/list
     values serialised on the way in.
+
+    ``key`` documents the caller's intent only — replacement is always resolved by
+    the table's declared PRIMARY KEY, not by this argument. Read it as a comment,
+    never as a guarantee: ``embeddings`` is keyed on ``(chunk_id, model)``, so a
+    call passing ``key="chunk_id"`` still keeps one row per model.
     """
     if not rows:
         return 0

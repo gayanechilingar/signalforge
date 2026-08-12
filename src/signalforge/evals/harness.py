@@ -224,10 +224,11 @@ def _grade(case: Case, result: Any) -> CaseOutcome:
     # Exact match across every labelled field. Partial credit is deliberately
     # withheld here and reported separately as direction_accuracy, so that a
     # single number cannot hide a severity-vs-direction confusion.
-    correct = bool(payload) and all(str(payload.get(k)) == str(v) for k, v in case.label.items())
+    fields: dict[str, Any] = payload or {}
+    correct = bool(payload) and all(str(fields.get(k)) == str(v) for k, v in case.label.items())
     direction_correct = bool(payload) and (
         "direction" not in case.label
-        or str(payload.get("direction")) == str(case.label["direction"])
+        or str(fields.get("direction")) == str(case.label["direction"])
     )
 
     return CaseOutcome(

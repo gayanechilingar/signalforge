@@ -223,27 +223,42 @@ def composite_score(signals: list[Signal]) -> dict[str, Any]:
     Weights are renormalised over the signals actually present, so a company with
     only an 8-K is not penalised for lacking a risk-factor diff — its composite
     reflects what is known, not what is missing.
+
+    Only the most recent signal per name contributes. Callers routinely pass a
+    company's whole signal history (``/companies/{ticker}/composite`` does), and
+    weighting each name once per filing made the composite a history-length
+    average rather than a current view: three quarters of ``guidance_tone``
+    carried 3x its intended weight, ``components`` still showed only the last of
+    them, and ``coverage`` — a fraction by definition — reported 1.5.
     """
     if not signals:
         return {"score": 0.0, "direction": "neutral", "components": {}, "coverage": 0.0}
 
+    latest: dict[str, Signal] = {}
+    for s in signals:
+        current = latest.get(s.name)
+        if current is None or (s.as_of, s.accession) > (current.as_of, current.accession):
+            latest[s.name] = s
+
     total_weight = 0.0
     weighted = 0.0
     components: dict[str, float] = {}
-    for s in signals:
+    for s in latest.values():
         w = COMPOSITE_WEIGHTS.get(s.name, 0.1)
         weighted += s.score * w
         total_weight += w
         components[s.name] = s.score
 
     score = round(weighted / total_weight, 4) if total_weight else 0.0
+    # How much of the intended signal set contributed — a composite built on one
+    # signal deserves less trust than one built on three. Counted over the known
+    # weights only, so an unrecognised signal name cannot push this above 1.0.
+    covered = sum(w for name, w in COMPOSITE_WEIGHTS.items() if name in latest)
     return {
         "score": score,
         "direction": direction_of(score),
         "components": components,
-        # How much of the intended signal set contributed — a composite built on
-        # one signal deserves less trust than one built on three.
-        "coverage": round(total_weight / sum(COMPOSITE_WEIGHTS.values()), 3),
+        "coverage": round(covered / sum(COMPOSITE_WEIGHTS.values()), 3),
     }
 
 
