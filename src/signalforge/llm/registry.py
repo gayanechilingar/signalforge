@@ -51,7 +51,16 @@ class Registry(BaseModel):
         return [self.spec(n) for n in names]
 
     def embedding(self, name: str | None = None) -> EmbedSpec:
-        key = name or self.default_embedding
+        """Resolve an embedding model: explicit argument, then env, then YAML.
+
+        The env layer exists so that ``SF_EMBED_MODEL=stub-embed`` makes the
+        *whole* system hermetic in one variable. Without it, any code path that
+        embeds without naming a model — retrieval called from the API, for
+        instance — silently reaches for real Ollama even when the completion
+        provider is stubbed. That is a test-isolation bug that passes on a laptop
+        with Ollama running and fails in CI, which is the worst combination.
+        """
+        key = name or get_settings().embed_model or self.default_embedding
         try:
             return self.embeddings[key]
         except KeyError:

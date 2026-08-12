@@ -106,6 +106,35 @@ class TestGrounding:
         assert r.grounded == 1
         assert r.methods == ["fuzzy"]
 
+    def test_repeated_words_do_not_make_fuzzy_matching_unreachable(self):
+        """Regression: the fuzzy threshold is a share of *distinct* quote tokens.
+
+        Scaling it by the raw token count made the bar exceed the maximum a set
+        intersection can reach as soon as a quote repeated a word, so stage 3
+        never fired on quotes of realistic length and both cases it exists for
+        were reported as fabrications.
+        """
+        source = (
+            "We expect revenue growth in the second half of the year to be driven by "
+            "strength in the services segment and by the continued expansion of the "
+            "installed base of our products in the enterprise market."
+        )
+        footnote = source.replace("services segment", "services segment(1)")
+        elided = source.replace("the enterprise market", "the market")
+
+        assert check_grounding([footnote], source).methods == ["fuzzy"]
+        assert check_grounding([elided], source).methods == ["fuzzy"]
+
+    def test_relaxed_threshold_still_rejects_topical_invention(self):
+        """The looser bar must not turn 'same subject matter' into 'cited'."""
+        source = (
+            "We expect revenue growth in the second half of the year to be driven by "
+            "strength in the services segment and by the continued expansion of the "
+            "installed base of our products in the enterprise market."
+        )
+        invented = "We expect revenue in the second half of the year to decline sharply overseas"
+        assert check_grounding([invented], source).methods == ["none"]
+
     def test_invented_quote_is_caught(self):
         r = check_grounding(["we expect revenue to double next year"], SOURCE)
         assert r.ratio == 0.0

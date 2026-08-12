@@ -384,12 +384,17 @@ def _fuse(*rankings: list[Hit], k_rrf: int = 60) -> list[Hit]:
 
 
 def index_stats(model: str | None = None) -> dict[str, Any]:
+    """Chunk and embedding counts, optionally narrowed to one embedding model."""
+    # `model` was accepted and then ignored, so asking for one model's coverage
+    # silently reported every model's.
+    clause, params = ("WHERE model = ?", [model]) if model else ("", [])
     with connect() as con:
-        chunks = con.execute("SELECT count(*) FROM chunks").fetchone()[0]
+        row = con.execute("SELECT count(*) FROM chunks").fetchone()
         rows = con.execute(
-            "SELECT model, count(*), min(dim) FROM embeddings GROUP BY model"
+            f"SELECT model, count(*), min(dim) FROM embeddings {clause} GROUP BY model",
+            params,
         ).fetchall()
     return {
-        "chunks": chunks,
+        "chunks": row[0] if row else 0,
         "embeddings": {r[0]: {"count": r[1], "dim": r[2]} for r in rows},
     }

@@ -87,6 +87,17 @@ def test_build_index_embeds_all_chunks(corpus, router):
     assert stats["embeddings"]["stub-embed"]["count"] == corpus
 
 
+def test_index_stats_filters_by_model(corpus, router):
+    """Regression: `model` was accepted and then ignored, so asking about one
+    model's coverage silently reported every model's."""
+    build_index(router=router, model="stub-embed")
+
+    assert index_stats("stub-embed")["embeddings"]["stub-embed"]["count"] == corpus
+    assert index_stats("not-an-embedding-model")["embeddings"] == {}
+    # The chunk count is not model-scoped and stays reported either way.
+    assert index_stats("not-an-embedding-model")["chunks"] == corpus
+
+
 def test_build_index_is_incremental(corpus, router):
     build_index(router=router, model="stub-embed")
     assert build_index(router=router, model="stub-embed") == 0, "should re-embed nothing"
@@ -151,3 +162,24 @@ def test_search_on_empty_index_is_not_an_error(warehouse, router):
 def test_k_is_respected(corpus, router):
     build_index(router=router, model="stub-embed")
     assert len(search("revenue growth guidance", router=router, model="stub-embed", k=2)) == 2
+
+
+def test_embedding_resolution_respects_the_env_override(registry, monkeypatch):
+    """One variable must be able to make the whole system hermetic.
+
+    Regression test for a real CI failure: the /search endpoint embeds without
+    naming a model, so it resolved the registry default (real Ollama) even with
+    the completion provider stubbed. It passed locally because Ollama was
+    running, and failed on a runner where it was not.
+    """
+    from signalforge.settings import get_settings
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("SF_EMBED_MODEL", "stub-embed")
+    assert registry.embedding().provider == "stub"
+
+    get_settings.cache_clear()
+    monkeypatch.delenv("SF_EMBED_MODEL", raising=False)
+    # With no override, configs/models.yaml remains the source of truth.
+    assert registry.embedding().name == registry.default_embedding
+    get_settings.cache_clear()

@@ -162,6 +162,50 @@ class TestComposite:
     def test_empty_is_neutral_not_an_error(self):
         assert composite_score([])["direction"] == "neutral"
 
+    def _dated(self, name, score, accession, as_of):
+        return Signal(
+            name=name,
+            cik="c1",
+            accession=accession,
+            as_of=as_of,
+            score=score,
+            confidence=0.9,
+            direction=direction_of(score),
+            rationale="r",
+        )
+
+    def test_signal_history_does_not_multiply_a_name_s_weight(self):
+        """Callers pass a company's whole history; only the current read counts.
+
+        Weighting a name once per filing turned the composite into an average over
+        however many quarters happened to be ingested, and pushed `coverage` — a
+        fraction by definition — above 1.0.
+        """
+        history = [
+            self._dated("guidance_tone", 0.1, "q1", date(2025, 3, 1)),
+            self._dated("guidance_tone", 0.1, "q2", date(2025, 6, 1)),
+            self._dated("guidance_tone", 0.9, "q3", date(2026, 1, 1)),
+            self._dated("event_class", -0.2, "e1", date(2026, 1, 1)),
+        ]
+        out = composite_score(history)
+
+        # The newest guidance_tone is the one that counts, not the mean of three.
+        assert out["components"]["guidance_tone"] == pytest.approx(0.9)
+        assert out["coverage"] == pytest.approx(0.8)  # guidance_tone + event_class
+        assert out["score"] == pytest.approx((0.9 * 0.35 + -0.2 * 0.45) / 0.8, abs=1e-3)
+
+    def test_coverage_never_exceeds_one(self):
+        """Including an unrecognised signal name must not break the fraction."""
+        out = composite_score(
+            [
+                self._dated("event_class", 0.5, "a", date(2026, 1, 1)),
+                self._dated("guidance_tone", 0.5, "b", date(2026, 1, 1)),
+                self._dated("risk_delta", 0.5, "c", date(2026, 1, 1)),
+                self._dated("some_new_signal", 0.5, "d", date(2026, 1, 1)),
+            ]
+        )
+        assert out["coverage"] <= 1.0
+
 
 class TestAlerts:
     def _sig(self, name, score, conf=0.9, ticker="TST"):

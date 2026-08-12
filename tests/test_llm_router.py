@@ -91,6 +91,37 @@ def test_falls_down_the_chain_when_first_model_is_exhausted(registry, tracer, tm
     assert exc.value.args[0].count("stub:") == 2
 
 
+def test_zero_retries_still_makes_one_attempt(registry, tracer, tmp_path):
+    """`max_retries=0` means "do not retry", not "do not call the provider".
+
+    Regression: the retry loop ran `range(max_retries)`, so a 0 skipped the body
+    entirely and fell through to an assertion, failing with a bare AssertionError
+    before any request was made.
+    """
+    stub = StubClient()
+    router = Router(
+        registry=registry,
+        tracer=tracer,
+        cache=ResponseCache(path=tmp_path / "c.duckdb"),
+        stub=stub,
+        max_retries=0,
+    )
+    assert router.complete("Guidance was raised.", chain="ci").text
+
+
+def test_zero_retries_does_not_retry_a_transient_failure(registry, tracer, tmp_path):
+    """One attempt only — the failure must surface as an LLMError, not an assert."""
+    router = Router(
+        registry=registry,
+        tracer=tracer,
+        cache=ResponseCache(path=tmp_path / "c.duckdb"),
+        stub=StubClient(fail_times=1),
+        max_retries=0,
+    )
+    with pytest.raises(LLMError):
+        router.complete("anything", chain="ci")
+
+
 def test_non_retryable_error_stops_immediately(registry, tracer, tmp_path):
     router = Router(
         registry=registry,

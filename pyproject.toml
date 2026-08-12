@@ -62,5 +62,9 @@ markers = [
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.mypy]
-python_version = "3.11"
+# Deliberately unpinned: pinning to 3.11 makes mypy parse the *installed*
+# third-party stubs with 3.11 grammar, and numpy's stubs use `type` statements
+# that only exist in 3.12+. That is a hard syntax error which aborts the run
+# before any of our own code is checked. Targeting the running interpreter also
+# means the CI matrix checks each version it claims to support.
 ignore_missing_imports = true

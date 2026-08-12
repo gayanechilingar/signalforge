@@ -38,7 +38,10 @@ class Settings(BaseSettings):
     default_provider: str = "ollama"
     ollama_host: str = "http://localhost:11434"
     ollama_timeout_s: float = 300.0
-    embed_model: str = "nomic-embed-text"
+    #: Override the embedding model from configs/models.yaml. Left unset in
+    #: normal operation; setting it to `stub-embed` makes the whole system
+    #: hermetic, which is how CI stays free of a running Ollama.
+    embed_model: str | None = None
 
     anthropic_api_key: str | None = None
     anthropic_base_url: str = "https://api.anthropic.com"

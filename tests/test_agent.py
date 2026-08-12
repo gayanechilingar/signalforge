@@ -119,6 +119,49 @@ class TestSqlGuard:
         with pytest.raises(SqlGuardError, match="empty"):
             _guard_sql("   ")
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT * FROM review_queue",
+            "SELECT * FROM review_queue AS x",
+            "SELECT * FROM llm_cache",
+            # Comma joins: the second table must be checked too, not just the
+            # first one after the FROM keyword.
+            "SELECT * FROM signals, review_queue",
+            "SELECT * FROM signals s, review_queue r",
+            "SELECT * FROM signals JOIN review_queue r ON r.task = signals.name",
+            "SELECT (SELECT count(*) FROM review_queue) AS n FROM signals",
+            "SELECT * FROM signals UNION ALL SELECT * FROM review_queue",
+            # Metadata reach that the verb and denylist checks do not cover.
+            "SELECT * FROM information_schema.tables",
+            "SELECT * FROM duckdb_settings()",
+        ],
+    )
+    def test_tables_outside_the_allowlist_are_refused(self, sql):
+        """READABLE_TABLES is a control, not documentation.
+
+        review_queue is withheld deliberately: it holds raw model output, and
+        letting the agent read it feeds its own prior reasoning back as evidence.
+        """
+        with pytest.raises(SqlGuardError, match="not readable"):
+            _guard_sql(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT * FROM signals",
+            "SELECT * FROM main.signals",
+            "SELECT s.name, c.ticker FROM signals s, companies c WHERE s.cik = c.cik",
+            "SELECT a.rule FROM alerts a JOIN signals s ON s.signal_id = a.signal_id",
+            "SELECT count(*) FROM (SELECT cik FROM filings) t",
+            "WITH a AS (SELECT cik FROM filings) SELECT * FROM a",
+            "SELECT task, count(*) FROM extractions GROUP BY task ORDER BY 2 DESC LIMIT 10",
+        ],
+    )
+    def test_allowlisted_reads_are_not_false_positives(self, sql):
+        """The allowlist must not break the queries the agent legitimately needs."""
+        assert _guard_sql(sql)
+
     def test_tool_returns_error_text_rather_than_raising(self, corpus):
         """A refused query must come back as something the agent can correct."""
         result = sql_query("DROP TABLE filings")

@@ -27,6 +27,10 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settin
     monkeypatch.setenv("SF_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("SF_DB_PATH", str(tmp_path / "data" / "test.duckdb"))
     monkeypatch.setenv("SF_DEFAULT_PROVIDER", "stub")
+    # Without this, any code path that embeds without naming a model (the
+    # /search endpoint, for one) reaches real Ollama - which passes on a dev
+    # laptop and fails in CI.
+    monkeypatch.setenv("SF_EMBED_MODEL", "stub-embed")
     monkeypatch.setenv("SF_DETERMINISTIC", "true")
     settings = get_settings()
     yield settings

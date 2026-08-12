@@ -121,14 +121,47 @@ class SqlGuardError(RuntimeError):
     pass
 
 
+#: A CTE name introduced by ``WITH x AS (`` or ``, x AS (``. These are legitimate
+#: table references that no allowlist can know about ahead of time.
+_CTE_RE = re.compile(r"(?:\bwith\b|,)\s*([a-z_][a-z0-9_]*)\s+as\s*\(")
+
+#: The body of a FROM/JOIN clause, up to whatever ends the table list. Captured as
+#: a whole rather than as a single identifier so that comma joins
+#: (``FROM signals s, review_queue r``) are seen — matching only the first table
+#: after the keyword would read the second one unchecked.
+_FROM_CLAUSE_RE = re.compile(
+    r"\b(?:from|join)\b(.*?)"
+    r"(?=\b(?:where|group|order|having|limit|offset|union|except|intersect|on|using"
+    r"|join|window|qualify|select|from)\b|\)|$)",
+    re.S,
+)
+
+#: The table name at the head of one FROM-list item, before any alias. Anchored, so
+#: a subquery item (which starts with ``(``) yields nothing and is skipped — its
+#: own FROM clause is matched separately.
+_TABLE_REF_RE = re.compile(r'^[a-z_][a-z0-9_."]*')
+
+
+def _table_refs(lowered: str) -> set[str]:
+    """Every table name the statement reads from."""
+    refs: set[str] = set()
+    for clause in _FROM_CLAUSE_RE.finditer(lowered):
+        for item in clause.group(1).split(","):
+            match = _TABLE_REF_RE.match(item.strip())
+            if match:
+                # Drop any schema/catalog qualifier: main.signals reads `signals`.
+                refs.add(match.group(0).replace('"', "").rsplit(".", 1)[-1])
+    return refs
+
+
 def _guard_sql(sql: str) -> str:
     """Refuse anything that is not a bounded read.
 
     Belt and braces, in this order: strip comments (so a denylisted keyword
     cannot hide behind ``--``), require a SELECT/WITH verb, reject a denylist of
-    DuckDB's filesystem and network reach, refuse multiple statements, and cap
-    the row count. The connection is *also* opened read-only, so even a bypass
-    of all of the above cannot write.
+    DuckDB's filesystem and network reach, refuse multiple statements, restrict
+    reads to :data:`READABLE_TABLES`, and cap the row count. The connection is
+    *also* opened read-only, so even a bypass of all of the above cannot write.
     """
     cleaned = re.sub(r"--[^\n]*", " ", sql)
     cleaned = re.sub(r"/\*.*?\*/", " ", cleaned, flags=re.S).strip().rstrip(";").strip()
@@ -144,6 +177,18 @@ def _guard_sql(sql: str) -> str:
     for pattern in _SQL_DENYLIST:
         if re.search(pattern, lowered):
             raise SqlGuardError(f"query contains a forbidden construct matching {pattern!r}")
+
+    # READABLE_TABLES documented an allowlist that nothing enforced, so the agent
+    # could read review_queue — a table deliberately withheld because it contains
+    # raw model output that would be fed back as if it were evidence. Rejecting
+    # unknown references also blocks DuckDB's metadata table functions and
+    # information_schema, which the verb and denylist checks let through.
+    allowed = set(READABLE_TABLES) | {m.group(1) for m in _CTE_RE.finditer(lowered)}
+    unknown = sorted(_table_refs(lowered) - allowed)
+    if unknown:
+        raise SqlGuardError(
+            f"table {unknown[0]!r} is not readable; allowed tables are {', '.join(READABLE_TABLES)}"
+        )
 
     if not re.search(r"\blimit\s+\d+", lowered):
         cleaned += f" LIMIT {MAX_SQL_ROWS}"
