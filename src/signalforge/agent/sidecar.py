@@ -215,7 +215,14 @@ def run_python(
     validate(code)
 
     harness = _HARNESS.format(
-        cpu=int(max(1, timeout_s)),
+        # One second of headroom over the wall clock. A CPU-bound infinite loop
+        # burns CPU time at wall-clock rate, so setting RLIMIT_CPU *equal* to the
+        # timeout made the two deadlines race: whichever fired first was arbitrary,
+        # and when the rlimit won the child died by signal with an empty stderr, so
+        # the agent saw a bare failure with no explanation. The parent's timeout now
+        # wins reliably and reports why; the rlimit stays as the backstop for a
+        # child the parent somehow fails to reap.
+        cpu=int(max(1, timeout_s)) + 1,
         mem=int(memory_mb * 1024 * 1024),
         banned=sorted(RUNTIME_DISARM),
     )
@@ -246,6 +253,10 @@ def run_python(
         duration = time.perf_counter() - t0
 
     stderr, result = _split_result(proc.stderr)
+    if proc.returncode < 0 and not stderr.strip():
+        # Killed by a signal, so there is no traceback to report. Say so, rather
+        # than handing the agent a failure with no output to reason about.
+        stderr = f"execution was terminated by signal {-proc.returncode} (resource limit reached)"
     return SidecarResult(
         ok=proc.returncode == 0,
         stdout=proc.stdout[:MAX_OUTPUT_CHARS],
